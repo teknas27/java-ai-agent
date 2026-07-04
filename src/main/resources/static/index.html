@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code Review Agent</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f1117;
+            color: #e1e4e8;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f35 0%, #0d1117 100%);
+            border-bottom: 1px solid #21262d;
+            padding: 16px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+        }
+
+        .header h1 {
+            font-size: 1.4rem;
+            background: linear-gradient(135deg, #58a6ff, #a371f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: #8b949e;
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #3fb950;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px 40px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            height: calc(100vh - 60px);
+        }
+
+        .panel {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 14px 20px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .panel-header h2 { font-size: 0.95rem; font-weight: 600; color: #c9d1d9; }
+
+        .panel-body {
+            flex: 1;
+            padding: 12px;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .panel-body.report {
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        textarea {
+            width: 100%; height: 100%;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            color: #e1e4e8;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.82rem;
+            line-height: 1.6;
+            padding: 14px;
+            resize: none;
+            outline: none;
+            overflow-x: hidden;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        textarea:focus { border-color: #58a6ff; }
+
+        .actions {
+            padding: 10px 14px;
+            border-top: 1px solid #21262d;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-primary { background: linear-gradient(135deg, #238636, #2ea043); color: #fff; }
+        .btn-primary:hover { background: linear-gradient(135deg, #2ea043, #3fb950); }
+        .btn-secondary { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+        .btn-secondary:hover { background: #30363d; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Score Card */
+        .score-card {
+            display: none;
+            padding: 16px 20px;
+            border-bottom: 1px solid #21262d;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .score-card.visible { display: flex; }
+
+        .score-circle {
+            width: 68px; height: 68px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .score-circle::before {
+            content: '';
+            position: absolute;
+            inset: 5px;
+            border-radius: 50%;
+            background: #161b22;
+        }
+
+        .score-circle .score-inner {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            line-height: 1;
+        }
+
+        .score-circle .score-num {
+            font-size: 1.4rem;
+            font-weight: 800;
+            display: block;
+        }
+
+        .score-circle .score-den {
+            font-size: 0.55rem;
+            opacity: 0.7;
+            display: block;
+            margin-top: 2px;
+        }
+
+        .score-high { background: conic-gradient(#3fb950 var(--pct), #21262d var(--pct)); color: #3fb950; }
+        .score-med { background: conic-gradient(#d29922 var(--pct), #21262d var(--pct)); color: #d29922; }
+        .score-low { background: conic-gradient(#f85149 var(--pct), #21262d var(--pct)); color: #f85149; }
+
+        .score-details { flex: 1; }
+        .score-details .score-label { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+        .score-details .score-value { font-size: 1.1rem; font-weight: 700; margin-top: 2px; }
+        .score-details .score-risk { font-size: 0.8rem; margin-top: 4px; padding: 2px 8px; border-radius: 4px; display: inline-block; }
+
+        .risk-high { background: #3d1214; color: #f85149; }
+        .risk-med { background: #2a1e00; color: #d29922; }
+        .risk-low { background: #0d2818; color: #3fb950; }
+
+        .score-meta {
+            text-align: right;
+            font-size: 0.75rem;
+            color: #8b949e;
+        }
+        .score-meta div { margin: 2px 0; }
+
+        /* Report Content */
+        .report-content {
+            display: none;
+            padding: 16px;
+            line-height: 1.7;
+            font-size: 0.88rem;
+        }
+
+        .report-content h2 {
+            font-size: 1.15rem;
+            margin: 20px 0 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #21262d;
+            color: #f0f6fc;
+        }
+        .report-content h2:first-child { margin-top: 0; }
+        .report-content h3 { font-size: 0.95rem; margin: 14px 0 6px; color: #c9d1d9; }
+        .report-content p { margin: 6px 0; color: #b1bac4; }
+        .report-content ol, .report-content ul { margin: 6px 0 6px 20px; color: #b1bac4; }
+        .report-content li { margin: 4px 0; }
+        .report-content strong { color: #f0f6fc; }
+
+        .report-content code {
+            background: #0d1117;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            color: #ff7b72;
+        }
+
+        .report-content pre {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 400px;
+        }
+
+        .report-content pre code {
+            background: none; padding: 0; color: #e1e4e8;
+            font-size: 0.78rem; line-height: 1.6;
+            white-space: pre;
+            display: block;
+        }
+
+        .report-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 0.82rem;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .report-content thead {
+            background: #0d1117;
+        }
+
+        .report-content th {
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: 600;
+            color: #f0f6fc;
+            border-bottom: 2px solid #30363d;
+        }
+
+        .report-content td {
+            padding: 8px 14px;
+            border-bottom: 1px solid #21262d;
+            color: #b1bac4;
+        }
+
+        .report-content tr:last-child td {
+            border-bottom: none;
+        }
+
+        .report-content tbody tr:hover {
+            background: #1c2128;
+        }
+
+        .loading { display: none; text-align: center; padding: 60px 20px; }
+        .loading.active { display: block; }
+
+        .spinner {
+            width: 36px; height: 36px;
+            border: 3px solid #21262d;
+            border-top-color: #58a6ff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 14px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: #484f58; }
+        .empty-state svg { margin-bottom: 12px; opacity: 0.4; }
+
+        .error-msg {
+            display: none;
+            background: #3d1214;
+            border: 1px solid #da3633;
+            border-radius: 8px;
+            padding: 14px;
+            margin: 14px;
+            color: #f85149;
+            font-size: 0.82rem;
+        }
+
+        @media (max-width: 1024px) {
+            .container { grid-template-columns: 1fr; height: auto; }
+            body { overflow: auto; }
+            .panel { min-height: 400px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>AI Code Review Agent</h1>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span>Agent Online — GPT-OSS 120B</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Left Panel: Code Input -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2>Paste Your Java Code</h2>
+                <span style="font-size:0.7rem;color:#484f58">Min 10 chars</span>
+            </div>
+            <div class="panel-body">
+                <textarea id="codeInput" placeholder="Paste your Java code here...
+
+Example:
+public class UserService {
+    public User findUser(String name) {
+        for(int i=0; i<users.size(); i++) {
+            if(users.get(i).getName() == name) {
+                return users.get(i);
+            }
+        }
+        return null;
+    }
+}"></textarea>
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" onclick="submitReview('review')">Code Review</button>
+                <button class="btn btn-secondary" onclick="submitReview('generate-tests')">Generate Tests</button>
+                <button class="btn btn-secondary" onclick="submitReview('performance')">Performance</button>
+                <button class="btn btn-secondary" onclick="loadSample()">Load Sample</button>
+            </div>
+        </div>
+
+        <!-- Right Panel: Report Output -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2>Review Report</h2>
+            </div>
+
+            <!-- Score Card (shows after review) -->
+            <div class="score-card" id="scoreCard">
+                <div class="score-circle" id="scoreCircle"><div class="score-inner" id="scoreText">—</div></div>
+                <div class="score-details">
+                    <div class="score-label">Quality Score</div>
+                    <div class="score-value" id="scoreValue">—</div>
+                    <span class="score-risk" id="scoreRisk"></span>
+                </div>
+                <div class="score-meta">
+                    <div id="metaTime">—</div>
+                    <div id="metaOp">—</div>
+                    <div id="metaTimestamp">—</div>
+                </div>
+            </div>
+
+            <div class="panel-body report" id="reportPanel">
+                <div class="empty-state" id="emptyState">
+                    <svg width="44" height="44" fill="#484f58" viewBox="0 0 16 16"><path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/><path d="M6.854 4.646a.5.5 0 0 1 0 .708L4.207 8l2.647 2.646a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 0 1 .708 0m2.292 0a.5.5 0 0 0 0 .708L11.793 8l-2.647 2.646a.5.5 0 0 0 .708.708l3-3a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708 0"/></svg>
+                    <p>Paste your code and click a review button</p>
+                    <p style="font-size:0.78rem;margin-top:6px">The AI agent will analyze complexity, smells & security</p>
+                </div>
+                <div class="loading" id="loadingState">
+                    <div class="spinner"></div>
+                    <p>Agent is analyzing your code...</p>
+                    <p style="font-size:0.78rem;color:#484f58;margin-top:6px">Calling tools: complexity, smells, security</p>
+                </div>
+                <div class="report-content" id="reportContent"></div>
+                <div class="error-msg" id="errorState"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+    <script>
+        const API_BASE = '/api/agent';
+
+        const sampleCode = `package com.example;
+
+import java.sql.*;
+import java.security.MessageDigest;
+import java.util.Random;
+
+public class AuthService {
+
+    public boolean login(String user, String pass) {
+        try {
+            Connection c = DriverManager.getConnection("jdbc:mysql://localhost/db", "root", "admin123");
+            ResultSet rs = c.createStatement().executeQuery(
+                "SELECT * FROM users WHERE name='" + user + "' AND pass='" + pass + "'");
+            return rs.next();
+        } catch (Exception e) { }
+        return false;
+    }
+
+    public String hash(String password) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("MD5");
+        byte[] b = md.digest(password.getBytes());
+        StringBuilder sb = new StringBuilder();
+        for (byte x : b) sb.append(String.format("%02x", x));
+        return sb.toString();
+    }
+
+    public String generateToken() {
+        Random r = new Random();
+        StringBuilder t = new StringBuilder();
+        for (int i = 0; i < 16; i++) t.append((char)(r.nextInt(26) + 'a'));
+        return t.toString();
+    }
+}`;
+
+        function loadSample() {
+            document.getElementById('codeInput').value = sampleCode;
+        }
+
+        async function submitReview(operation) {
+            const code = document.getElementById('codeInput').value.trim();
+            if (code.length < 10) {
+                alert('Please paste at least 10 characters of code.');
+                return;
+            }
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}/${operation}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+                const data = await response.json();
+                if (data.status === 'SUCCESS') {
+                    showReport(data);
+                } else {
+                    showError(data.errorMessage || 'Unknown error occurred');
+                }
+            } catch (err) {
+                showError('Failed to connect. Is the server running on port 8080?');
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('loadingState').style.display = 'block';
+            document.getElementById('reportContent').style.display = 'none';
+            document.getElementById('errorState').style.display = 'none';
+            document.getElementById('scoreCard').classList.remove('visible');
+            document.querySelectorAll('.btn').forEach(b => b.disabled = true);
+        }
+
+        function showReport(data) {
+            try {
+                document.getElementById('loadingState').style.display = 'none';
+                document.getElementById('reportContent').style.display = 'block';
+                document.querySelectorAll('.btn').forEach(b => b.disabled = false);
+
+                const html = markdownToHtml(data.result || '');
+                document.getElementById('reportContent').innerHTML = html;
+
+                // Extract score - handles "Overall Score: X/10", "Performance Score: X/10", "Test Coverage Score: X/10"
+                const scoreMatch = (data.result || '').match(/(?:Score|score)[:\s]*(\d+)\s*\/\s*10/);
+                const score = scoreMatch ? parseInt(scoreMatch[1]) : null;
+
+                // Extract risk level
+                const riskMatch = (data.result || '').match(/risk\s*level[:\s]*(\w+)/i);
+                const risk = riskMatch ? riskMatch[1].toUpperCase() : (score !== null ? (score >= 7 ? 'LOW' : score >= 4 ? 'MEDIUM' : 'HIGH') : null);
+
+                // Show score card
+                const scoreCard = document.getElementById('scoreCard');
+                if (score !== null) {
+                    scoreCard.classList.add('visible');
+                    const pct = (score / 10) * 100;
+                    const cls = score >= 7 ? 'score-high' : score >= 4 ? 'score-med' : 'score-low';
+                    const riskCls = risk === 'HIGH' ? 'risk-high' : risk === 'LOW' ? 'risk-low' : 'risk-med';
+
+                    const circle = document.getElementById('scoreCircle');
+                    circle.className = `score-circle ${cls}`;
+                    circle.style.setProperty('--pct', `${pct}%`);
+                    document.getElementById('scoreText').innerHTML = `<span class="score-num">${score}/10</span>`;
+
+                    document.getElementById('scoreValue').textContent = `${score} / 10`;
+                    document.getElementById('scoreValue').style.color = cls === 'score-high' ? '#3fb950' : cls === 'score-med' ? '#d29922' : '#f85149';
+
+                    const riskEl = document.getElementById('scoreRisk');
+                    riskEl.textContent = risk || '—';
+                    riskEl.className = `score-risk ${riskCls}`;
+                } else {
+                    scoreCard.classList.add('visible');
+                    document.getElementById('scoreCircle').className = 'score-circle score-med';
+                    document.getElementById('scoreCircle').style.setProperty('--pct', '50%');
+                    document.getElementById('scoreText').innerHTML = '<span class="score-num">✓</span>';
+                    document.getElementById('scoreValue').textContent = data.operation;
+                    document.getElementById('scoreValue').style.color = '#58a6ff';
+                    document.getElementById('scoreRisk').textContent = 'Analysis Complete';
+                    document.getElementById('scoreRisk').className = 'score-risk risk-low';
+                }
+
+                // Meta info
+                document.getElementById('metaTime').textContent = `⏱ ${data.processingTimeMs || 0}ms`;
+                document.getElementById('metaOp').textContent = `📋 ${data.operation || '—'}`;
+                document.getElementById('metaTimestamp').textContent = `🕐 ${new Date(data.timestamp).toLocaleTimeString()}`;
+
+                // Highlight code blocks
+                document.querySelectorAll('.report-content pre code').forEach(block => {
+                    hljs.highlightElement(block);
+                });
+            } catch (e) {
+                console.error('Error rendering report:', e);
+                document.getElementById('reportContent').style.display = 'block';
+                document.getElementById('reportContent').innerHTML =
+                    '<pre style="white-space:pre-wrap;color:#e1e4e8">' + (data.result || 'No result') + '</pre>';
+                document.querySelectorAll('.btn').forEach(b => b.disabled = false);
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('errorState').style.display = 'block';
+            document.getElementById('errorState').textContent = msg;
+            document.querySelectorAll('.btn').forEach(b => b.disabled = false);
+        }
+
+        function markdownToHtml(md) {
+            // First, handle code blocks (preserve their formatting)
+            const codeBlocks = [];
+            let processed = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+                const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+                codeBlocks.push(`<pre><code class="language-${lang || 'java'}">${escaped.trim()}</code></pre>`);
+                return placeholder;
+            });
+
+            // Handle tables
+            const tables = [];
+            processed = processed.replace(/((?:\|.+\|(?:\n|$))+)/g, (tableBlock) => {
+                const rows = tableBlock.trim().split('\n').filter(r => r.trim());
+                if (rows.length < 2) return tableBlock;
+
+                let html = '<table>';
+                rows.forEach((row, idx) => {
+                    // Skip separator row (| --- | --- |)
+                    if (row.match(/^\|[\s\-:|]+\|$/)) return;
+
+                    const cells = row.split('|').filter((c, i, arr) => i > 0 && i < arr.length - 1);
+                    const tag = idx === 0 ? 'th' : 'td';
+                    const wrapper = idx === 0 ? 'thead' : '';
+
+                    if (idx === 0) html += '<thead>';
+                    if (idx === 2 || (idx === 1 && !rows[1].match(/^\|[\s\-:|]+\|$/))) html += '<tbody>';
+
+                    html += '<tr>';
+                    cells.forEach(cell => {
+                        html += `<${tag}>${cell.trim()}</${tag}>`;
+                    });
+                    html += '</tr>';
+
+                    if (idx === 0) html += '</thead>';
+                });
+                html += '</tbody></table>';
+
+                const placeholder = `__TABLE_${tables.length}__`;
+                tables.push(html);
+                return placeholder;
+            });
+
+            // Process markdown
+            processed = processed
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+                .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+
+            // Wrap lists
+            processed = processed.replace(/((?:<li>.*?<\/li>(?:<br>)?)+)/g, '<ol>$1</ol>');
+            processed = processed.replace(/<br><\/ol>/g, '</ol>');
+            processed = processed.replace(/<ol><br>/g, '<ol>');
+
+            // Restore code blocks
+            codeBlocks.forEach((block, i) => {
+                processed = processed.replace(`__CODE_BLOCK_${i}__`, block);
+            });
+
+            // Restore tables
+            tables.forEach((table, i) => {
+                processed = processed.replace(`__TABLE_${i}__`, table);
+            });
+
+            return `<p>${processed}</p>`;
+        }
+    </script>
+</body>
+</html>

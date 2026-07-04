@@ -1,0 +1,21 @@
+# ─── Build ───
+target/
+*.class
+*.jar
+*.war
+
+# ─── Environment / Secrets ───
+.env
+application-local.yml
+application-local.yaml
+*.key
+
+# ─── IDE ───
+.idea/
+*.iml
+.vscode/
+*.DS_Store
+
+# ─── Logs ───
+*.log
+logs/

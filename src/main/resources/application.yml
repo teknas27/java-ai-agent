@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: java-ai-agent
+
+# ─────────────────────────────────────────
+# Groq Configuration (Free LLM Provider)
+# Get your key at: https://console.groq.com
+# Set env variable: export GROQ_API_KEY=gsk_...
+# ─────────────────────────────────────────
+agent:
+  groq:
+    api-key: ${GROQ_API_KEY:your-groq-api-key-here}
+    base-url: https://api.groq.com/openai/v1
+    model: openai/gpt-oss-120b
+    temperature: 0.3
+    max-tokens: 1500
+    timeout-seconds: 60
+
+  memory:
+    max-messages: 20
+
+logging:
+  level:
+    com.sanket: DEBUG
+    dev.langchain4j: DEBUG
